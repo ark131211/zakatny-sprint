@@ -87,6 +87,10 @@ body{font:14px/1.4 var(--body);overflow:hidden}
 .opts label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
 .opts select{font:500 14px var(--body);color:var(--text);background:#1b1730;border:1px solid var(--line);border-radius:7px;padding:7px 10px}
 .btns{display:flex;gap:10px;flex-wrap:wrap}
+.mods{display:flex;gap:8px;flex-wrap:wrap}
+.mods label{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--text);background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:7px;padding:7px 10px;cursor:pointer}
+.mods input{accent-color:var(--sun);width:15px;height:15px;margin:0}
+#loading{position:absolute;inset:0;display:grid;place-items:center;background:rgba(13,11,23,.85);font:700 34px/1 var(--display);text-transform:uppercase;letter-spacing:.04em;z-index:20}
 .go-btn{font:700 26px/1 var(--display);text-transform:uppercase;letter-spacing:.03em;padding:16px 34px;border:0;border-radius:8px;cursor:pointer;color:#1c0d02;
   background:linear-gradient(90deg,#ffd06a,#ff8a3d);box-shadow:0 8px 24px rgba(255,138,61,.35);transform:skewX(-10deg)}
 .go-btn:hover{filter:brightness(1.08)}
@@ -140,7 +144,7 @@ body{font:14px/1.4 var(--body);overflow:hidden}
 
   <div class="overlay" id="garage">
     <div class="panel">
-      <div class="kicker">Гараж · ночной город</div>
+      <div class="kicker" id="kick">Гараж · ночной город</div>
       <h1 class="title">Закатный спринт</h1>
       <div class="cars" id="cars"></div>
       <div class="stats" id="stats"></div>
@@ -148,8 +152,12 @@ body{font:14px/1.4 var(--body);overflow:hidden}
       <div class="opts">
         <label for="diff">Соперники<select id="diff"><option value="easy">Новички</option><option value="normal" selected>Гонщики</option><option value="hard">Легенды</option></select></label>
         <label for="laps">Круги<select id="laps"><option value="2">2</option><option value="3" selected>3</option><option value="5">5</option></select></label>
+        <label for="city">Город<select id="city"></select></label>
+        <label for="mode">Режим<select id="mode"><option value="race">Гонка</option><option value="time">На время</option></select></label>
         <label for="quality">Графика<select id="quality"><option value="ultra">Ультра</option><option value="high">Высокая</option><option value="low">Низкая</option></select></label>
       </div>
+      <div class="mods" aria-label="Модификаторы"><label><input type="checkbox" id="mGrav">Лунная гравитация</label><label><input type="checkbox" id="mInf">Бесконечное нитро</label><label><input type="checkbox" id="mChaos">Хаос на дорогах</label></div>
+      <div id="recLine" class="lbl"></div>
       <div class="btns"><button class="go-btn" id="startBtn" type="button">На старт</button></div>
       <dl class="keys">
         <dt><kbd>W</kbd> <kbd>S</kbd> / <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>газ, тормоз и задний ход</dd>
@@ -182,6 +190,7 @@ body{font:14px/1.4 var(--body);overflow:hidden}
     </div>
   </div>
   <div id="err" hidden></div>
+  <div id="loading" hidden></div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
@@ -205,7 +214,14 @@ const clamp=(v,a,b)=>v<a?a:v>b?b:v,lerp=(a,b,t)=>a+(b-a)*t,rnd=(a,b)=>a+Math.ran
 const angLerp=(a,b,t)=>a+((((b-a+Math.PI)%TAU)+TAU)%TAU-Math.PI)*t;
 const V3=THREE.Vector3;
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
-const srand=mulberry32(7);const sr=(a,b)=>a+srand()*(b-a); // the city is the same every visit
+const LOCS={
+  miami:{name:"Майами",sub:"закат · набережная",seed:7,shape:[560,170,110,50,9,0],sunEl:4,sunAz:-.6,sky:[9,3.2,.008],fog:["#5b3a63",.00085],sunC:["#ffb27a",2.2],hemi:["#7d6bb8","#3b2530",.55],ground:["#3d3a2c",50,100,20,45,18,34],sea:["#101c34",.06,.4],bld:[720,.6,.75,.1,.3,.12,.28,1],win:1.8,trees:"palm",lamp:[9,5.2,2.4],weather:null,exp:.95},
+  tokyo:{name:"Токио",sub:"неоновая ночь · дождь",seed:21,shape:[520,120,150,70,12,2.1],night:1,sunEl:-5,lightEl:40,sunAz:1.2,sky:[2,.5,.004],fog:["#2b1745",.0013],sunC:["#9fb0ff",.55],hemi:["#7a55e0","#1a0f24",.45],ground:["#1c1a22",250,300,10,25,8,16],sea:["#0a0a1a",.05,.5],bld:[950,.7,.95,.25,.55,.07,.18,1.35],win:2.8,trees:"sakura",lamp:[4,1.4,7],weather:"rain",exp:1},
+  moscow:{name:"Москва",sub:"зима · снегопад",seed:1147,shape:[600,140,90,60,7,4.2],sunEl:9,sunAz:2.2,sky:[12,1.2,.02],fog:["#b7c1ce",.0017],sunC:["#e8eeff",1.3],hemi:["#d3dcec","#8a93a3",.95],ground:["#e4eaf1",200,220,10,25,82,96],sea:["#a9bccf",.45,.1],bld:[650,0,.12,.15,.45,.25,.45,.8],win:1.3,trees:"pine",lamp:[9,6.5,3.5],weather:"snow",exp:.95},
+  dubai:{name:"Дубай",sub:"пустыня · полдень",seed:971,bg:"#8db9e3",shape:[580,190,80,40,14,1],sunEl:50,sunAz:.4,sky:[4,1,.005],fog:["#c9c3b0",.0005],sunC:["#fff1d6",1.7],hemi:["#bcd4f0","#c9a36b",.45],ground:["#b88f5a",28,42,40,60,42,58],sea:["#0e7690",.05,.3],bld:[330,.52,.6,.15,.35,.22,.42,2.3],win:.2,trees:"palm",lamp:[9,8,6],weather:null,exp:.8}};
+let CITY="miami";try{const c=localStorage.getItem("sprint-city");if(LOCS[c])CITY=c}catch{}
+const LOC=LOCS[CITY];
+const srand=mulberry32(LOC.seed);const sr=(a,b)=>a+srand()*(b-a); // the city is the same every visit
 
 /* ================= renderer & sky ================= */
 const canvas=$("c");
@@ -213,16 +229,16 @@ const renderer=new THREE.WebGLRenderer({canvas,antialias:false,powerPreference:"
 renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 const scene=new THREE.Scene();
 const camera=new THREE.PerspectiveCamera(62,1,.1,6000);
-scene.fog=new THREE.FogExp2(new THREE.Color("#5b3a63"),.00085);
-const SUN_EL=4*Math.PI/180,SUN_AZ=-.6;
-const sunDir=new V3(Math.cos(SUN_EL)*Math.sin(SUN_AZ),Math.sin(SUN_EL),Math.cos(SUN_EL)*Math.cos(SUN_AZ)).normalize();
-function skyParams(s){const u=s.material.uniforms;u.turbidity.value=9;u.rayleigh.value=3.2;u.mieCoefficient.value=.008;u.mieDirectionalG.value=.86;u.sunPosition.value.copy(sunDir).multiplyScalar(1000)}
-const sky=new THREE.Sky();sky.scale.setScalar(5000);skyParams(sky);scene.add(sky);
+scene.fog=new THREE.FogExp2(new THREE.Color(LOC.fog[0]),LOC.fog[1]);
+const SUN_AZ=LOC.sunAz,dirOf=el=>{el*=Math.PI/180;return new V3(Math.cos(el)*Math.sin(SUN_AZ),Math.sin(el),Math.cos(el)*Math.cos(SUN_AZ)).normalize()};
+const skyDir=dirOf(LOC.sunEl),sunDir=dirOf(LOC.lightEl??LOC.sunEl);
+function skyParams(s){const u=s.material.uniforms;u.turbidity.value=LOC.sky[0];u.rayleigh.value=LOC.sky[1];u.mieCoefficient.value=LOC.sky[2];u.mieDirectionalG.value=.86;u.sunPosition.value.copy(skyDir).multiplyScalar(1000)}
+const sky=new THREE.Sky();sky.scale.setScalar(5000);skyParams(sky);scene.add(sky);if(LOC.night||LOC.bg){sky.visible=false;scene.background=new THREE.Color(LOC.bg||LOC.fog[0])}
 {const pm=new THREE.PMREMGenerator(renderer),ss=new THREE.Scene(),s2=new THREE.Sky();s2.scale.setScalar(1000);skyParams(s2);ss.add(s2);scene.environment=pm.fromScene(ss,.02).texture;pm.dispose()}
-const sun=new THREE.DirectionalLight("#ffb27a",2.2);sun.castShadow=true;
+const sun=new THREE.DirectionalLight(LOC.sunC[0],LOC.sunC[1]);sun.castShadow=true;
 const SC=sun.shadow.camera;SC.left=-70;SC.right=70;SC.top=70;SC.bottom=-70;SC.near=1;SC.far=900;sun.shadow.bias=-.0005;sun.shadow.normalBias=.05;
 scene.add(sun,sun.target);
-scene.add(new THREE.HemisphereLight("#7d6bb8","#3b2530",.55));
+scene.add(new THREE.HemisphereLight(LOC.hemi[0],LOC.hemi[1],LOC.hemi[2]));
 
 /* ================= textures ================= */
 function canvasTex(w,h,draw,srgb=true){const c=document.createElement("canvas");c.width=w;c.height=h;draw(c.getContext("2d"),w,h);
@@ -241,7 +257,7 @@ const roadNorm=noiseNormal(256,3,2);roadNorm.repeat.set(1,1);
 const barrierTex=canvasTex(128,64,(g,w,h)=>{g.fillStyle="#d8d4cc";g.fillRect(0,0,w,h);g.fillStyle="#c9202f";for(let x=-64;x<w;x+=32){g.beginPath();g.moveTo(x,h);g.lineTo(x+16,h);g.lineTo(x+48,0);g.lineTo(x+32,0);g.fill()}
   g.fillStyle="rgba(0,0,0,.25)";g.fillRect(0,h-6,w,6)});
 const neonTex=canvasTex(64,8,(g,w,h)=>{g.fillStyle="#39e2ff";g.fillRect(0,0,w/2,h);g.fillStyle="#ff3d6e";g.fillRect(w/2,0,w/2,h)},true);
-const groundTex=canvasTex(256,256,(g,w,h)=>{g.fillStyle="#3d3a2c";g.fillRect(0,0,w,h);for(let i=0;i<5000;i++){g.fillStyle=`hsla(${50+Math.random()*50},${20+Math.random()*25}%,${18+Math.random()*16}%,.6)`;g.fillRect(Math.random()*w,Math.random()*h,2,2)}});
+const groundTex=canvasTex(256,256,(g,w,h)=>{const G=LOC.ground;g.fillStyle=G[0];g.fillRect(0,0,w,h);for(let i=0;i<5000;i++){g.fillStyle=`hsla(${G[1]+Math.random()*(G[2]-G[1])},${G[3]+Math.random()*(G[4]-G[3])}%,${G[5]+Math.random()*(G[6]-G[5])}%,.6)`;g.fillRect(Math.random()*w,Math.random()*h,2,2)}});
 groundTex.repeat.set(220,220);
 const waterNorm=noiseNormal(256,6,3);waterNorm.repeat.set(160,160);
 const chevTex=canvasTex(128,128,(g,w,h)=>{g.fillStyle="#141414";g.fillRect(0,0,w,h);g.fillStyle="#ffc94a";for(let y=-64;y<h;y+=40){g.beginPath();g.moveTo(0,y+40);g.lineTo(w/2,y);g.lineTo(w,y+40);g.lineTo(w,y+58);g.lineTo(w/2,y+18);g.lineTo(0,y+58);g.fill()}});
@@ -249,8 +265,9 @@ const checkTex=canvasTex(128,32,(g,w,h)=>{for(let y=0;y<2;y++)for(let x=0;x<8;x+
 
 /* ================= track ================= */
 const W=18,HALF=W/2,WALL=HALF+.7,SP=2.5;
-const ctrl=[];for(let k=0;k<18;k++){const a=k/18*TAU,r=560+170*Math.sin(a*2+1.3)+110*Math.sin(a*3+.4)+50*Math.sin(a*5+2);
-  const y=Math.max(0,9*Math.sin(a*2+.5)+3.5);ctrl.push(new V3(Math.cos(a)*r,y,Math.sin(a)*r))}
+const [SB,SA1,SA2,SA3,SH,SPh]=LOC.shape;
+const ctrl=[];for(let k=0;k<18;k++){const a=k/18*TAU,r=SB+SA1*Math.sin(a*2+1.3+SPh)+SA2*Math.sin(a*3+.4+SPh*.7)+SA3*Math.sin(a*5+2+SPh*1.3);
+  const y=Math.max(0,SH*Math.sin(a*2+.5+SPh)+3.5);ctrl.push(new V3(Math.cos(a)*r,y,Math.sin(a)*r))}
 const curve=new THREE.CatmullRomCurve3(ctrl,true,"centripetal",.5);
 const LEN=curve.getLength(),N=Math.floor(LEN/SP);
 const PX=new Float32Array(N),PY=new Float32Array(N),PZ=new Float32Array(N),TX=new Float32Array(N),TZ=new Float32Array(N),RX=new Float32Array(N),RZ=new Float32Array(N),KAPPA=new Float32Array(N),SLOPE=new Float32Array(N);
@@ -293,7 +310,7 @@ roadMat.onBeforeCompile=sh=>{sh.fragmentShader=sh.fragmentShader.replace("#inclu
 /* ---------- ground, sea ---------- */
 {
   const g=new THREE.Mesh(new THREE.CircleGeometry(1250,96),new THREE.MeshStandardMaterial({map:groundTex,roughness:1}));g.rotation.x=-Math.PI/2;g.position.y=-.35;g.receiveShadow=true;scene.add(g);
-  const sea=new THREE.Mesh(new THREE.PlaneGeometry(12000,12000),new THREE.MeshStandardMaterial({color:"#101c34",roughness:.06,metalness:.4,normalMap:waterNorm,normalScale:new THREE.Vector2(.5,.5)}));sea.rotation.x=-Math.PI/2;sea.position.y=-1.1;scene.add(sea);
+  const sea=new THREE.Mesh(new THREE.PlaneGeometry(12000,12000),new THREE.MeshStandardMaterial({color:LOC.sea[0],roughness:LOC.sea[1],metalness:LOC.sea[2],normalMap:waterNorm,normalScale:new THREE.Vector2(.5,.5)}));sea.rotation.x=-Math.PI/2;sea.position.y=-1.1;scene.add(sea);
   scene.userData.sea=sea;
 }
 /* ---------- spatial hash of the road, to keep scenery off it ---------- */
@@ -302,7 +319,7 @@ function roadDist(x,z){let best=1e9;const cx=Math.floor(x/HC),cz=Math.floor(z/HC
 /* ---------- city: towers with procedurally lit windows ---------- */
 const _m=new THREE.Matrix4(),_q=new THREE.Quaternion(),_s=new V3(),_p=new V3(),UP=new V3(0,1,0);
 {
-  const BN=720,mat=new THREE.MeshStandardMaterial({color:"#ffffff",roughness:.35,metalness:.55,envMapIntensity:1});
+  const BN=LOC.bld[0],mat=new THREE.MeshStandardMaterial({color:"#ffffff",roughness:.35,metalness:.55,envMapIntensity:1});
   mat.onBeforeCompile=sh=>{
     sh.vertexShader="varying vec3 vBW;varying vec3 vBN;varying float vBid;\n"+sh.vertexShader.replace("#include <begin_vertex>",`#include <begin_vertex>
       vBW=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;vBN=normalize(mat3(modelMatrix*instanceMatrix)*objectNormal);vBid=float(gl_InstanceID);`);
@@ -312,13 +329,13 @@ const _m=new THREE.Matrix4(),_q=new THREE.Quaternion(),_s=new V3(),_p=new V3(),U
         float h=fract(sin(dot(cell+vec2(vBid*7.13,vBid*3.7),vec2(12.9898,78.233)))*43758.5453);
         vec3 wc=mix(vec3(1.,.66,.32),vec3(.7,.85,1.),step(.86,h));
         diffuseColor.rgb=mix(diffuseColor.rgb,diffuseColor.rgb*.25,win);
-        totalEmissiveRadiance+=wc*step(.6,h)*win*1.8; } }`)};
+        totalEmissiveRadiance+=wc*step(.6,h)*win*${LOC.win.toFixed(2)}; } }`)};
   const geo=new THREE.BoxGeometry(1,1,1).translate(0,.5,0),im=new THREE.InstancedMesh(geo,mat,BN),c=new THREE.Color();let n=0;
   for(let t=0;t<9000&&n<BN;t++){const a=srand()*TAU,r=Math.sqrt(srand())*1150,x=Math.cos(a)*r,z=Math.sin(a)*r,w=sr(14,34),d=sr(14,34);
     const rd=roadDist(x,z);if(rd<24+Math.max(w,d)*.72)continue;
-    const inner=r<420?1:r<700?.6:.3,h=sr(10,30)+srand()*srand()*170*inner+(rd>80?srand()*40:0);
+    const inner=r<420?1:r<700?.6:.3,h=sr(10,30)+srand()*srand()*170*inner*LOC.bld[7]+(rd>80?srand()*40:0);
     _m.compose(_p.set(x,-.4,z),_q.setFromAxisAngle(UP,Math.round(srand()*4)*Math.PI/2+sr(-.05,.05)),_s.set(w,h,d));im.setMatrixAt(n,_m);
-    im.setColorAt(n,c.setHSL(sr(.6,.75),sr(.1,.3),sr(.12,.28)));n++}
+    {const B=LOC.bld;im.setColorAt(n,c.setHSL(sr(B[1],B[2]),sr(B[3],B[4]),sr(B[5],B[6])))}n++}
   im.count=n;im.castShadow=im.receiveShadow=true;im.frustumCulled=false;scene.add(im);
 }
 /* ---------- street lamps, palms, bridge pillars ---------- */
@@ -327,15 +344,15 @@ const _m=new THREE.Matrix4(),_q=new THREE.Quaternion(),_s=new V3(),_p=new V3(),U
   for(let d=0,j=0;d<LEN;d+=20,j++){const s=d/SP,sd=j%2?1:-1,p=samp(s);lampPoles.push([p.x+p.rx*(WALL+.6)*sd,p.y,p.z+p.rz*(WALL+.6)*sd,Math.atan2(p.rx*sd,p.rz*sd)])}
   const pole=new THREE.InstancedMesh(new THREE.CylinderGeometry(.11,.16,9,8).translate(0,4.5,0),new THREE.MeshStandardMaterial({color:"#2a2a33",roughness:.5,metalness:.7}),lampPoles.length);
   const arm=new THREE.InstancedMesh(new THREE.BoxGeometry(.12,.12,2.6).translate(0,9,1.2),pole.material,lampPoles.length);
-  const headMat=new THREE.MeshBasicMaterial();headMat.color.setRGB(9,5.2,2.4);
+  const headMat=new THREE.MeshBasicMaterial();headMat.color.setRGB(...LOC.lamp);
   const head=new THREE.InstancedMesh(new THREE.BoxGeometry(.5,.14,.9).translate(0,8.9,2.3),headMat,lampPoles.length);
   lampPoles.forEach(([x,y,z,r],i)=>{_m.compose(_p.set(x,y-.9,z),_q.setFromAxisAngle(UP,r+Math.PI),_s.set(1,1,1));pole.setMatrixAt(i,_m);arm.setMatrixAt(i,_m);head.setMatrixAt(i,_m)});
   for(const im of [pole,arm,head]){im.frustumCulled=false;scene.add(im)}pole.castShadow=true;
   const palms=[];for(let i=0;i<N;i+=7){if(PY[i]>1.2||srand()<.35)continue;const sd=srand()<.5?-1:1,off=sr(13,22);const x=PX[i]+RX[i]*off*sd,z=PZ[i]+RZ[i]*off*sd;if(roadDist(x,z)<11)continue;palms.push([x,z,sr(7,12)])}
-  const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(.16,.3,1,7).translate(0,.5,0),new THREE.MeshStandardMaterial({color:"#4a3a2c",roughness:.9}),palms.length);
-  const frond=new THREE.InstancedMesh(new THREE.ConeGeometry(1,1,9,1,true),new THREE.MeshStandardMaterial({color:"#1f3b22",roughness:.8,side:THREE.DoubleSide}),palms.length);
+  const trunk=new THREE.InstancedMesh(new THREE.CylinderGeometry(.16,.3,1,7).translate(0,.5,0),new THREE.MeshStandardMaterial({color:LOC.trees==="pine"?"#3a2c22":LOC.trees==="sakura"?"#2e2226":"#4a3a2c",roughness:.9}),palms.length);
+  const frond=new THREE.InstancedMesh(new THREE.ConeGeometry(1,1,9,1,true),new THREE.MeshStandardMaterial({color:LOC.trees==="pine"?"#2f4a3b":LOC.trees==="sakura"?"#ff9ec8":"#1f3b22",emissive:LOC.trees==="sakura"?"#5a1030":"#000000",roughness:.8,side:THREE.DoubleSide}),palms.length);
   palms.forEach(([x,z,h],i)=>{_m.compose(_p.set(x,-.35,z),_q.setFromAxisAngle(UP,srand()*6),_s.set(1,h,1));trunk.setMatrixAt(i,_m);
-    _m.compose(_p.set(x,h-.9,z),_q,_s.set(3.2,-1.3,3.2));frond.setMatrixAt(i,_m)});
+    if(LOC.trees==="pine")_m.compose(_p.set(x,h*.2+h*.45,z),_q,_s.set(2.3,h*.9,2.3));else if(LOC.trees==="sakura")_m.compose(_p.set(x,h-.4,z),_q,_s.set(3.8,-2.6,3.8));else _m.compose(_p.set(x,h-.9,z),_q,_s.set(3.2,-1.3,3.2));frond.setMatrixAt(i,_m)});
   for(const im of [trunk,frond]){im.castShadow=true;im.frustumCulled=false;scene.add(im)}
   const pil=[];for(let i=0;i<N;i+=12){if(PY[i]<2)continue;for(const sd of [-5,5])pil.push([PX[i]+RX[i]*sd,PZ[i]+RZ[i]*sd,PY[i]-.9])}
   const pillar=new THREE.InstancedMesh(new THREE.CylinderGeometry(.7,.8,1,12).translate(0,.5,0),new THREE.MeshStandardMaterial({color:"#8b8794",roughness:.8}),Math.max(1,pil.length));
@@ -449,6 +466,9 @@ function thud(vol=.4,dur=.35){if(!ac)return;const t=ac.currentTime,n=Math.floor(
 /* ================= racers ================= */
 const AI_NAMES=["Вихрь","Кобра","Мистраль","Сокол","Титан"];
 const DIFF={easy:.84,normal:.93,hard:1.0};
+let MODE="race",GRAV=24;const MODS={grav:false,inf:false,chaos:false};
+try{Object.assign(MODS,JSON.parse(localStorage.getItem("sprint-mods"))||{});MODE=localStorage.getItem("sprint-mode")||"race"}catch{}
+const recKey=()=>"sprint-rec-"+CITY;const getRec=()=>{try{return +localStorage.getItem(recKey())||Infinity}catch{return Infinity}};
 let player=null,rivals=[],traffic=[],state="garage",raceT=0,countT=0,laps=3,camMode=0,banners=0;
 let sel={car:"vector",paint:"#e8202c"};try{const s=JSON.parse(localStorage.getItem("sprint-sel"));if(s&&CAR_BY[s.car])sel=s}catch{}
 const stats={max:0,takedowns:0,near:0,drift:0};
@@ -483,7 +503,7 @@ function updatePlayer(dt){
   const st=(keys.has("KeyA")||keys.has("ArrowLeft")||touch.l?1:0)-(keys.has("KeyD")||keys.has("ArrowRight")||touch.r?1:0);
   const drift=racing&&(keys.has("Space")||touch.d);
   c.nitroOn=racing&&c.nitro>0&&(keys.has("ShiftLeft")||keys.has("ShiftRight")||keys.has("KeyN")||touch.n)&&!brk;
-  if(c.nitroOn)c.nitro=Math.max(0,c.nitro-dt*.3*(1/sp.nitro));
+  if(c.nitroOn)c.nitro=Math.max(0,c.nitro-dt*.3*(1/sp.nitro));if(MODS.inf)c.nitro=1;
   c.steer=lerp(c.steer,st,Math.min(1,dt*(Math.abs(st)>Math.abs(c.steer)?7:10)));
   const fx=Math.sin(c.h),fz=Math.cos(c.h),rx=-Math.cos(c.h),rz=Math.sin(c.h);
   let vf=c.vx*fx+c.vz*fz,vl=c.vx*rx+c.vz*rz;
@@ -520,7 +540,7 @@ function updatePlayer(dt){
   if(c.s>N*.45&&c.s<N*.55)c.cp=true;
   // height, ramps, jumps
   const gy=samp(c.s).y+rampH(c.s,c.lat);
-  if(c.air){c.vy-=24*dt;c.y+=c.vy*dt;c.airT+=dt;
+  if(c.air){c.vy-=GRAV*dt;c.y+=c.vy*dt;c.airT+=dt;
     if(c.y<=gy){c.y=gy;c.air=false;shake=Math.max(shake,Math.min(1,-c.vy*.04));thud(.25);
       if(c.airT>.7){c.nitro=Math.min(1,c.nitro+.15);banner("Прыжок!","j",`${c.airT.toFixed(1)} с в воздухе`)}c.vy=0}}
   else if(gy<c.y-.35&&Math.hypot(c.vx,c.vz)>15){c.air=true;c.airT=0}
@@ -563,7 +583,7 @@ function updateKinematic(r,dt,isAI){
   if(!isAI&&state==="race"){let d=r.s-player.s;if(d<-N/2)d+=N;if(d>N/2)d-=N;if(d<-90){r.s=wrap(Math.floor(player.s+rnd(160,380)));r.lat=r.latT=pick([-6.75,-2.25,2.25,6.75]);r.crashT=0;r.crashSpin=0;r.speed=r.vmax}}
   const p=samp(r.s);r.x=p.x+p.rx*r.lat;r.z=p.z+p.rz*r.lat;
   const gy=p.y+rampH(r.s,r.lat);
-  if(r.air){r.vy-=24*dt;r.y+=r.vy*dt;if(r.y<=gy){r.y=gy;r.air=false;r.vy=0}}
+  if(r.air){r.vy-=GRAV*dt;r.y+=r.vy*dt;if(r.y<=gy){r.y=gy;r.air=false;r.vy=0}}
   else if(gy<r.y-.35&&r.speed>15)r.air=true;else{r.vy=clamp((gy-r.y)/Math.max(dt,1e-3),-30,30);r.y=gy}
   r.h=Math.atan2(p.tx,p.tz)+clamp((r.latT-r.lat)*.03,-.15,.15);r.wheelSpin+=r.speed*dt/(r.spec.wheelR||.35);
 }
@@ -591,7 +611,7 @@ function fmt(t){if(!isFinite(t))return"—";const m=Math.floor(t/60),s=t-m*60;re
 function onLap(r){
   const now=raceT;if(r.lap>=2){const lt=now-r.lapStart;if(lt<r.best)r.best=lt;if(r.isPlayer)banner(`Круг ${r.lap-1}`,"w",`${fmt(lt)}${lt===r.best?" · лучший":""}`)}
   r.lapStart=now;
-  if(r.lap>laps&&!r.finished){r.finished=true;r.finishT=now;if(r.isPlayer){state="finish";finishT=0;banner("Финиш!","j",`${place()} место`)}}
+  if(r.lap>laps&&!r.finished){r.finished=true;r.finishT=now;if(r.isPlayer){state="finish";finishT=0;if(MODE==="time"){const rec=getRec();r.newRec=r.best<rec;if(r.newRec)try{localStorage.setItem(recKey(),r.best)}catch{};banner(r.newRec?"Новый рекорд!":"Финиш!","j",fmt(now))}else banner("Финиш!","j",`${place()} место`)}}
   else if(r.isPlayer&&r.lap===laps&&laps>1)banner("Последний круг","j","")
 }
 let finishT=0;
@@ -599,18 +619,21 @@ function standings(){return [player,...rivals].slice().sort((a,b)=>(b.finished-a
 function place(){return standings().indexOf(player)+1}
 function clearRace(){for(const r of [player,...rivals,...traffic])if(r)r.m.dispose();rivals=[];traffic=[];player=null}
 function setupRace(){
-  clearRace();player=newPlayer();const df=DIFF[$("diff").value]||.93;for(let k=0;k<5;k++)rivals.push(newRival(k,df));
-  for(let k=0;k<16;k++)traffic.push(newTraffic(k));
+  clearRace();player=newPlayer();const df=DIFF[$("diff").value]||.93;if(MODE==="race")for(let k=0;k<5;k++)rivals.push(newRival(k,df));
+  for(let k=0;k<(MODS.chaos?34:16);k++){const t=newTraffic(k);if(MODS.chaos){t.vmax=t.speed=rnd(22,36)}traffic.push(t)}
   Object.assign(stats,{max:0,takedowns:0,near:0,drift:0});resetPickups();laps=+$("laps").value||3;
   for(const r of rivals)updateKinematic(r,0,true);for(const t of traffic)updateKinematic(t,0,false);
   placeModels(0);
 }
-function startRace(){clearTimeout(goTimer);$("count").hidden=true;hc.cnt=undefined;initAudio();ac&&ac.resume();setupRace();state="count";countT=3;raceT=0;$("hud").hidden=false;showOverlay(null);camIntro=1;
+function readOpts(){MODE=$("mode").value;MODS.grav=$("mGrav").checked;MODS.inf=$("mInf").checked;MODS.chaos=$("mChaos").checked;GRAV=MODS.grav?9:24;
+  try{localStorage.setItem("sprint-mods",JSON.stringify(MODS));localStorage.setItem("sprint-mode",MODE)}catch{}}
+function startRace(){readOpts();clearTimeout(goTimer);$("count").hidden=true;hc.cnt=undefined;initAudio();ac&&ac.resume();setupRace();state="count";countT=3;raceT=0;$("hud").hidden=false;showOverlay(null);camIntro=1;
   try{localStorage.setItem("sprint-sel",JSON.stringify(sel))}catch{}}
 function showOverlay(id){for(const o of ["garage","pause","results"])$(o).hidden=o!==id}
 function showResults(){
   state="results";showOverlay("results");const st=standings(),pl=place();
-  $("resKicker").textContent=pl===1?"Победа":"Финиш";$("resTitle").textContent=pl+" место";
+  if(MODE==="time"){const rec=getRec();$("resKicker").textContent=`${LOC.name} · рекорд круга ${isFinite(rec)?fmt(rec):"—"}${player.newRec?" · новый!":""}`;$("resTitle").textContent=fmt(player.finishT)}
+  else{$("resKicker").textContent=(pl===1?"Победа":"Финиш")+" · "+LOC.name;$("resTitle").textContent=pl+" место"}
   const tb=$("resBody");tb.innerHTML="";
   st.forEach((r,i)=>{const tr=document.createElement("tr");if(r.isPlayer)tr.className="me";
     for(const v of [i+1,r.name+(r.isPlayer?"":" · "+r.spec.name),fmt(r.best),r.finished?fmt(r.finishT):"на трассе"]){const td=document.createElement("td");td.textContent=v;tr.append(td)}tb.append(tr)});
@@ -650,7 +673,7 @@ function updateCamera(dt,T){
 const composer=new THREE.EffectComposer(renderer,new THREE.WebGLRenderTarget(4,4,{type:THREE.HalfFloatType,samples:4}));
 composer.addPass(new THREE.RenderPass(scene,camera));
 const bloom=new THREE.UnrealBloomPass(new THREE.Vector2(256,256),.75,.6,.88);composer.addPass(bloom);
-const finalPass=new THREE.ShaderPass({uniforms:{tDiffuse:{value:null},speed:{value:0},nitro:{value:0},time:{value:0},aspect:{value:1},exposure:{value:.95}},
+const finalPass=new THREE.ShaderPass({uniforms:{tDiffuse:{value:null},speed:{value:0},nitro:{value:0},time:{value:0},aspect:{value:1},exposure:{value:LOC.exp}},
   vertexShader:"varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
   fragmentShader:`uniform sampler2D tDiffuse;uniform float speed,nitro,time,aspect,exposure;varying vec2 vUv;
     vec3 aces(vec3 x){return clamp((x*(2.51*x+.03))/(x*(2.43*x+.59)+.14),0.,1.);}
@@ -672,6 +695,19 @@ function applyQuality(k){Q=QUALITY[k]||QUALITY.ultra;$("quality").value=k;sun.sh
   bloom.enabled=Q.bloom;for(const rt of [composer.renderTarget1,composer.renderTarget2])if(rt.samples!==Q.msaa){rt.samples=Q.msaa;rt.dispose()}resize();try{localStorage.setItem("sprint-q",k)}catch{}}
 function resize(){const w=innerWidth,h=innerHeight;renderer.setPixelRatio(Q.dpr);renderer.setSize(w,h,false);composer.setPixelRatio(Q.dpr);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();finalPass.uniforms.aspect.value=w/h}
 addEventListener("resize",resize);
+
+/* ================= weather ================= */
+const weather=(()=>{if(!LOC.weather)return null;const snow=LOC.weather==="snow",NW=snow?2600:3200,BX=90,BY=45;
+  const pos=new Float32Array(NW*3);for(let i=0;i<NW;i++){pos[i*3]=rnd(-BX,BX);pos[i*3+1]=rnd(-BY,BY);pos[i*3+2]=rnd(-BX,BX)}
+  const geo=new THREE.BufferGeometry();geo.setAttribute("position",new THREE.BufferAttribute(pos,3));
+  const mat=new THREE.PointsMaterial({size:snow?.45:.16,map:dotTex,transparent:true,opacity:snow?.9:.55,depthWrite:false,color:snow?"#ffffff":"#b9c8ff",sizeAttenuation:true});
+  const pts=new THREE.Points(geo,mat);pts.frustumCulled=false;scene.add(pts);
+  return{update(dt,T){const o=camera.position;pts.position.set(0,0,0);
+    for(let i=0;i<NW;i++){const k=i*3;pos[k+1]-=(snow?4+Math.sin(i)*1.2:48)*dt;if(snow){pos[k]+=Math.sin(T*.7+i)*1.2*dt;pos[k+2]+=Math.cos(T*.5+i*1.7)*1.2*dt}
+      let x=pos[k]-o.x,y=pos[k+1]-o.y,z=pos[k+2]-o.z;
+      if(y<-BY){pos[k+1]+=2*BY;y+=2*BY}if(y>BY)pos[k+1]-=2*BY;
+      if(x<-BX)pos[k]+=2*BX;else if(x>BX)pos[k]-=2*BX;if(z<-BX)pos[k+2]+=2*BX;else if(z>BX)pos[k+2]-=2*BX}
+    geo.attributes.position.needsUpdate=true}}})();
 
 /* ================= boost pickups ================= */
 const MAXB=3,pickups=[];
@@ -769,6 +805,10 @@ $("startBtn").onclick=startRace;$("againBtn").onclick=startRace;$("garageBtn").o
 $("pauseBtn").onclick=()=>{if(state==="paused")resume();else if(state==="race"||state==="count")pause()};
 $("camBtn").onclick=()=>camMode=(camMode+1)%2;
 $("quality").onchange=e=>applyQuality(e.target.value);
+{const cs=$("city");for(const[k,v]of Object.entries(LOCS)){const o=document.createElement("option");o.value=k;o.textContent=v.name;cs.append(o)}cs.value=CITY;
+  cs.onchange=()=>{try{localStorage.setItem("sprint-city",cs.value)}catch{};const l=$("loading");l.textContent="Едем в "+{miami:"Майами",tokyo:"Токио",moscow:"Москву",dubai:"Дубай"}[cs.value]+"…";l.hidden=false;setTimeout(()=>location.reload(),60)};
+  $("kick").textContent=`Гараж · ${LOC.name} · ${LOC.sub}`;$("mode").value=MODE;$("mGrav").checked=MODS.grav;$("mInf").checked=MODS.inf;$("mChaos").checked=MODS.chaos;
+  const upd=()=>{const t=$("mode").value==="time",r=getRec();$("diff").disabled=t;$("recLine").textContent=t?`Рекорд круга (${LOC.name}): ${isFinite(r)?fmt(r):"пока нет"}`:""};$("mode").onchange=upd;upd()}
 addEventListener("touchstart",()=>{if(!touchMode){touchMode=true;document.body.classList.add("touch")}},{passive:true,once:true});
 $("tE").addEventListener("touchstart",e=>{e.preventDefault();useBoost()},{passive:false});
 for(const [id,k] of [["tL","l"],["tR","r"],["tB","b"],["tD","d"],["tN","n"]]){const el=$(id);
@@ -786,7 +826,7 @@ function frame(now){
     if(state==="finish"){finishT+=dt;if(finishT>2.6)showResults()}}
   else if(state==="count"){updatePlayer(dt)}
   if(player){placeModels(dt);updateCamera(dt,T)}
-  updatePickups(dt,T);smoke.update(dt);sparks.update(dt);
+  updatePickups(dt,T);if(weather)weather.update(dt,T);smoke.update(dt);sparks.update(dt);
   scene.userData.sea.material.normalMap.offset.x+=dt*.003;
   if(player){const f=Math.round(player.x/4)*4,g=Math.round(player.z/4)*4;sun.target.position.set(f,player.y,g);sun.position.set(f+sunDir.x*400,player.y+sunDir.y*400+60,g+sunDir.z*400);sun.target.updateMatrixWorld()}
   const U=finalPass.uniforms;U.time.value=T;U.speed.value=player&&state!=="garage"?clamp((player.speed-25)/70,0,1):0;U.nitro.value=lerp(U.nitro.value,player&&(player.nitroOn||player.boostT>0)?(player.boostT>0?1.4:1):0,Math.min(1,dt*6));
